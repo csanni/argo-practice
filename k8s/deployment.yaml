@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: fast-api-app
-          image: ghcr.io/csanni/argocd-practice:latest # CI will update this
+          image: ghcr.io/csanni/argo-practice:sha-0a67e1ad0bfa2c6946d7efcef09af00366448060 # CI will update this
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
