@@ -1,0 +1,76 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "k8s/**"
+      - "*.md"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: type=sha,format=long
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Update Deployment Manifest
+        # Using a separate PAT works best if you want to trigger other workflows or just commit back.
+        # GITHUB_TOKEN often has permission but sometimes 'push' needs tweaking.
+        # We'll use GITHUB_TOKEN for simplicity, assuming user repo settings allow it.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_IMAGE: ${{ steps.meta.outputs.tags }}
+        run: |
+          # The tag output might be multiple lines, we grab the first one
+          IMAGE_TAG=$(echo $NEW_IMAGE | cut -d' ' -f1)
+          echo "Updating deployment with image: $IMAGE_TAG"
+
+          # Clone a fresh copy to ensure clean state and avoid checkout issues or use the current one
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Use yq to update yaml safely, or sed for simplicity if yq not available (ubuntu-latest has it usually? or we just use text replace)
+          # We'll use simple sed for the image line.
+          # WARNING: This sed is a bit fragile, relies on structure.
+          # Ideally use: yq -i '.spec.template.spec.containers[0].image = "..."' k8s/deployment.yaml
+
+          # Install yq
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod a+x /usr/local/bin/yq
+
+          yq -i ".spec.template.spec.containers[0].image = \"$IMAGE_TAG\"" k8s/deployment.yaml
+
+          git add k8s/deployment.yaml
+          git commit -m "Update deployment image to $IMAGE_TAG [skip ci]"
+          git push

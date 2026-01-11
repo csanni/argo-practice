@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fast-api-service
+  namespace: default
+spec:
+  selector:
+    app: fast-api-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: LoadBalancer # In Kind, this might need extra setup (MetalLB) or just use ClusterIP/NodePort. Using LoadBalancer for generic.
